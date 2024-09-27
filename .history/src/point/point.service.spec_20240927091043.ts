@@ -5,7 +5,7 @@ import { PointService } from './point.service';
 import { PointHistoryTable } from '../database/pointhistory.table';
 import { UserPointTable } from '../database/userpoint.table';
 import { PointHistory, TransactionType } from './point.model';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 describe('PointService', () => {
   let service: PointService;
@@ -44,7 +44,7 @@ describe('PointService', () => {
 
   describe('getPoint', () => {
     // 포인트 정보가 존재할 경우
-    it('get user Point', async () => {
+    it('get user Point!', async () => {
       const userId = 1;
       const mockUserPoint = {
         id: userId,
@@ -94,7 +94,7 @@ describe('PointService', () => {
     });
   });
   describe('chargePoint', () => {
-    it('charge point', async () => {
+    it('should charge point successfully', async () => {
       const userId = 1;
       const amount = 100;
       const currentPoint = 50;
@@ -119,7 +119,7 @@ describe('PointService', () => {
       );
     });
 
-    it('max point limit', async () => {
+    it('should throw an error if charging points would exceed max balance', async () => {
       const userId = 1;
       const amount = 10000;
       const currentPoint = 95000;
@@ -135,11 +135,12 @@ describe('PointService', () => {
   });
 
   describe('usePoint', () => {
-    it('use point', async () => {
+    it('should use user point successfully', async () => {
       const userId = 1;
       const amount = 50;
       const currentPoint = 100;
       const newPoint = currentPoint - amount;
+
       const mockCurrentUserPoint = { id: userId, point: currentPoint, updateMillis: Date.now() };
       const mockUpdatedUserPoint = { id: userId, point: newPoint, updateMillis: expect.any(Number) };
 
@@ -160,7 +161,7 @@ describe('PointService', () => {
       );
     });
 
-    it('use point > current point', async () => {
+    it('should throw error when insufficient points', async () => {
       const userId = 1;
       const amount = 150;
       const currentPoint = 100;
@@ -168,48 +169,12 @@ describe('PointService', () => {
 
       jest.spyOn(userTable, 'selectById').mockResolvedValue(mockCurrentUserPoint);
 
-      await expect(service.usePoint(userId, amount)).rejects.toThrow(ConflictException);
+      await expect(service.usePoint(userId, amount)).rejects.toThrow('not enough point');
       expect(userTable.selectById).toHaveBeenCalledWith(userId);
       expect(userTable.insertOrUpdate).not.toHaveBeenCalled();
       expect(historyTable.insert).not.toHaveBeenCalled();
     });
   });
 
-  describe('Concurrency control', () => {
-    it('userID lock test - charge and use', async () => {
-        const userId = 1;
-        const initialPoint = 100;
-        let currentPoint = initialPoint;
 
-        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
-            return {
-                id,
-                point: currentPoint,
-                updateMillis: Date.now(),
-            };
-        });
-
-        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
-            currentPoint = point; // Update currentPoint
-            return {
-                id,
-                point,
-                updateMillis: Date.now(),
-            };
-        });
-
-        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
-
-        const chargePromise = service.chargePoint(userId, 50);
-        const usePromise = service.usePoint(userId, 30);
-
-        const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
-
-        expect(userTable.selectById).toHaveBeenCalledTimes(2); // Each charge and use calls selectById once
-        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2); // Only two insertOrUpdate calls
-        expect(chargeResult.point).toBe(initialPoint + 50);
-        expect(useResult.point).toBe(initialPoint + 50 - 30);
-        expect(currentPoint).toBe(initialPoint + 50 - 30);
-    });
-  });
 });

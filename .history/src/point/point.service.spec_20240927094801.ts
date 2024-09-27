@@ -211,5 +211,84 @@ describe('PointService', () => {
         expect(useResult.point).toBe(initialPoint + 50 - 30);
         expect(currentPoint).toBe(initialPoint + 50 - 30);
     });
-  });
+
+    it('multiple charge same user ID', async () => {
+        const userId = 1;
+        const initialPoint = 100;
+        let currentPoint = initialPoint;
+
+        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
+            return {
+                id,
+                point: currentPoint,
+                updateMillis: Date.now(),
+            };
+        });
+
+        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
+            currentPoint = point; // Update currentPoint
+            return {
+                id,
+                point,
+                updateMillis: Date.now(),
+            };
+        });
+
+        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
+
+        // Create multiple charge promises
+        const chargePromise1 = service.chargePoint(userId, 50);
+        const chargePromise2 = service.chargePoint(userId, 30);
+        const chargePromise3 = service.chargePoint(userId, 20);
+
+        const [result1, result2, result3] = await Promise.all([chargePromise1, chargePromise2, chargePromise3]);
+
+        expect(userTable.selectById).toHaveBeenCalledTimes(6); // Each charge request calls selectById twice
+        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(3); // Only three insertOrUpdate calls
+        expect(result1.point).toBe(initialPoint + 50);
+        expect(result2.point).toBe(initialPoint + 50 + 30);
+        expect(result3.point).toBe(initialPoint + 50 + 30 + 20);
+        expect(currentPoint).toBe(initialPoint + 50 + 30 + 20);
+    });
+
+    it('multiple use same user ID', async () => {
+        const userId = 1;
+        const initialPoint = 100;
+        let currentPoint = initialPoint;
+
+        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
+            return {
+                id,
+                point: currentPoint,
+                updateMillis: Date.now(),
+            };
+        });
+
+        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
+            currentPoint = point; // Update currentPoint
+            return {
+                id,
+                point,
+                updateMillis: Date.now(),
+            };
+        });
+
+        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
+
+        // Create multiple use promises
+        const usePromise1 = service.usePoint(userId, 20);
+        const usePromise2 = service.usePoint(userId, 30);
+        const usePromise3 = service.usePoint(userId, 10);
+
+        const [result1, result2, result3] = await Promise.all([usePromise1, usePromise2, usePromise3]);
+
+        expect(userTable.selectById).toHaveBeenCalledTimes(6); // Each use request calls selectById twice
+        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(3); // Only three insertOrUpdate calls
+        expect(result1.point).toBe(initialPoint - 20);
+        expect(result2.point).toBe(initialPoint - 20 - 30);
+        expect(result3.point).toBe(initialPoint - 20 - 30 - 10);
+        expect(currentPoint).toBe(initialPoint - 20 - 30 - 10);
+    });
+});
+
 });

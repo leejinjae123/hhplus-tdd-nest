@@ -176,40 +176,68 @@ describe('PointService', () => {
   });
 
   describe('Concurrency control', () => {
+    const userId = 1;
+    const initialPoint = 100;
+    let currentPoint = initialPoint;
     it('userID lock test - charge and use', async () => {
-        const userId = 1;
-        const initialPoint = 100;
-        let currentPoint = initialPoint;
 
-        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
-            return {
-                id,
-                point: currentPoint,
-                updateMillis: Date.now(),
-            };
-        });
+      jest.spyOn(userTable, 'selectById').mockImplementation(async () => ({
+        id: userId,
+        point: currentPoint,
+        updateMillis: Date.now(),
+      }));
 
-        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
-            currentPoint = point; // Update currentPoint
-            return {
-                id,
-                point,
-                updateMillis: Date.now(),
-            };
-        });
+      jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
+        currentPoint = point;
+        return {
+          id,
+          point,
+          updateMillis: Date.now(),
+        };
+      });
 
-        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
+      jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
 
-        const chargePromise = service.chargePoint(userId, 50);
-        const usePromise = service.usePoint(userId, 30);
+      const chargePromise = service.chargePoint(userId, 50);
+      const usePromise = service.usePoint(userId, 30);
 
-        const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
+      const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
 
-        expect(userTable.selectById).toHaveBeenCalledTimes(2); // Each charge and use calls selectById once
-        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2); // Only two insertOrUpdate calls
-        expect(chargeResult.point).toBe(initialPoint + 50);
-        expect(useResult.point).toBe(initialPoint + 50 - 30);
-        expect(currentPoint).toBe(initialPoint + 50 - 30);
+      expect(userTable.selectById).toHaveBeenCalledTimes(2);
+      expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2);
+      expect(chargeResult.point).toBe(initialPoint + 50);
+      expect(useResult.point).toBe(initialPoint + 50 - 30);
+      expect(currentPoint).toBe(initialPoint + 50 - 30);
     });
   });
+  it('multiple charge requests for the same user ID', async () => {
+    const chargePromise1 = service.chargePoint(userId, 50);
+    const chargePromise2 = service.chargePoint(userId, 30);
+    const chargePromise3 = service.chargePoint(userId, 20);
+
+    const [result1, result2, result3] = await Promise.all([chargePromise1, chargePromise2, chargePromise3]);
+
+    expect(userTable.selectById).toHaveBeenCalledTimes(3);
+    expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(3);
+    expect(result1.point).toBe(initialPoint + 50);
+    expect(result2.point).toBe(initialPoint + 50 + 30);
+    expect(result3.point).toBe(initialPoint + 50 + 30 + 20);
+    expect(currentPoint).toBe(initialPoint + 50 + 30 + 20);
+  });
+
+  it('multiple use requests for the same user ID', async () => {
+    const usePromise1 = service.usePoint(userId, 20);
+    const usePromise2 = service.usePoint(userId, 30);
+    const usePromise3 = service.usePoint(userId, 10);
+
+    const [result1, result2, result3] = await Promise.all([usePromise1, usePromise2, usePromise3]);
+
+    expect(userTable.selectById).toHaveBeenCalledTimes(3);
+    expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(3);
+    expect(result1.point).toBe(initialPoint - 20);
+    expect(result2.point).toBe(initialPoint - 20 - 30);
+    expect(result3.point).toBe(initialPoint - 20 - 30 - 10);
+    expect(currentPoint).toBe(initialPoint - 20 - 30 - 10);
+  });
+});
 });

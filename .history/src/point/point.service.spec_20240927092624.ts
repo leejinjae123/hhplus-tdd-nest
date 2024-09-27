@@ -44,7 +44,7 @@ describe('PointService', () => {
 
   describe('getPoint', () => {
     // 포인트 정보가 존재할 경우
-    it('get user Point', async () => {
+    it('get user Point!', async () => {
       const userId = 1;
       const mockUserPoint = {
         id: userId,
@@ -94,7 +94,7 @@ describe('PointService', () => {
     });
   });
   describe('chargePoint', () => {
-    it('charge point', async () => {
+    it('should charge point successfully', async () => {
       const userId = 1;
       const amount = 100;
       const currentPoint = 50;
@@ -119,7 +119,7 @@ describe('PointService', () => {
       );
     });
 
-    it('max point limit', async () => {
+    it('should throw ConflictException if charging points would exceed max balance', async () => {
       const userId = 1;
       const amount = 10000;
       const currentPoint = 95000;
@@ -135,7 +135,7 @@ describe('PointService', () => {
   });
 
   describe('usePoint', () => {
-    it('use point', async () => {
+    it('should use point successfully', async () => {
       const userId = 1;
       const amount = 50;
       const currentPoint = 100;
@@ -160,7 +160,7 @@ describe('PointService', () => {
       );
     });
 
-    it('use point > current point', async () => {
+    it('should throw ConflictException when insufficient points', async () => {
       const userId = 1;
       const amount = 150;
       const currentPoint = 100;
@@ -176,40 +176,38 @@ describe('PointService', () => {
   });
 
   describe('Concurrency control', () => {
-    it('userID lock test - charge and use', async () => {
-        const userId = 1;
-        const initialPoint = 100;
-        let currentPoint = initialPoint;
+    it('should process concurrent requests for the same user sequentially', async () => {
+      const userId = 1;
+      const initialPoint = 100;
+      let currentPoint = initialPoint;
 
-        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
-            return {
-                id,
-                point: currentPoint,
-                updateMillis: Date.now(),
-            };
-        });
+      jest.spyOn(userTable, 'selectById').mockImplementation(async () => ({
+        id: userId,
+        point: currentPoint,
+        updateMillis: Date.now(),
+      }));
 
-        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
-            currentPoint = point; // Update currentPoint
-            return {
-                id,
-                point,
-                updateMillis: Date.now(),
-            };
-        });
+      jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
+        currentPoint = point;
+        return {
+          id,
+          point,
+          updateMillis: Date.now(),
+        };
+      });
 
-        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
+      jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
 
-        const chargePromise = service.chargePoint(userId, 50);
-        const usePromise = service.usePoint(userId, 30);
+      const chargePromise = service.chargePoint(userId, 50);
+      const usePromise = service.usePoint(userId, 30);
 
-        const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
+      const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
 
-        expect(userTable.selectById).toHaveBeenCalledTimes(2); // Each charge and use calls selectById once
-        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2); // Only two insertOrUpdate calls
-        expect(chargeResult.point).toBe(initialPoint + 50);
-        expect(useResult.point).toBe(initialPoint + 50 - 30);
-        expect(currentPoint).toBe(initialPoint + 50 - 30);
+      expect(userTable.selectById).toHaveBeenCalledTimes(2);
+      expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2);
+      expect(chargeResult.point).toBe(initialPoint + 50);
+      expect(useResult.point).toBe(initialPoint + 50 - 30);
+      expect(currentPoint).toBe(initialPoint + 50 - 30);
     });
   });
 });

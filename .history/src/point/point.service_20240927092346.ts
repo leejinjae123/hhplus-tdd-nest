@@ -14,7 +14,6 @@ export class PointService {
     private readonly historyTable: PointHistoryTable,
   ) {}
 
-  // userId를 기반으로 동시성 제어를 위한 lock 함수
   private async acquireLock(userId: number): Promise<() => void> {
     while (this.locks.has(userId)) {
       await this.locks.get(userId);

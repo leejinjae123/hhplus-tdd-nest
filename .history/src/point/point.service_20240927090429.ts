@@ -14,7 +14,6 @@ export class PointService {
     private readonly historyTable: PointHistoryTable,
   ) {}
 
-  // userId를 기반으로 동시성 제어를 위한 lock 함수
   private async acquireLock(userId: number): Promise<() => void> {
     while (this.locks.has(userId)) {
       await this.locks.get(userId);
@@ -46,18 +45,18 @@ export class PointService {
     }
     return history;
   }
-  // 특정 유저의 id를 기반으로 number의 양만큼 포인트를 충전하는 서비스, max point인 100000을 넘을시 exception 발생
-  async chargePoint(userId: number, amount: number): Promise<UserPoint> {
+  // 특정 유저의 id를 기반으로 number의 양만큼 포인트를 충전하는 서비스
+  async chargePoint(userId: number, amount: number): Promise<any> {
     const release = await this.acquireLock(userId);
     try {
-      const currentUserPoint = await this.getPoint(userId);
+      const updateMillis = Date.now();
+      const currentUserPoint = await this.userTable.selectById(userId);
       const newPoint = currentUserPoint.point + amount;
 
       if (newPoint > this.maxBalance) {
-        throw new ConflictException(`Max limit point is ${this.maxBalance}`);
+        throw new ConflictException('max limit point is 100000');
       }
 
-      const updateMillis = Date.now();
       await this.historyTable.insert(
         userId,
         amount,
@@ -70,28 +69,22 @@ export class PointService {
         newPoint,
       );
       return updatedUserPoint;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException('User not found');
-      }
-      throw error;
     } finally {
       release();
     }
   }
 
-  // 특정 유저의 id를 기반으로 number의 양만큼 포인트를 사용하는 서비스, 포인트의 잔액이 부족할 경우 exception 발생
-  async usePoint(userId: number, amount: number): Promise<UserPoint> {
+  async usePoint(userId: number, amount: number): Promise<any> {
     const release = await this.acquireLock(userId);
     try {
-      const currentUserPoint = await this.getPoint(userId);
+      const currentUserPoint = await this.userTable.selectById(userId);
 
       if (currentUserPoint.point < amount) {
-        throw new ConflictException('Not enough points');
+        throw new Error('not enough point');
       }
 
-      const newPoint = currentUserPoint.point - amount;
       const updateMillis = Date.now();
+      const newPoint = currentUserPoint.point - amount;
 
       await this.historyTable.insert(
         userId,
@@ -100,13 +93,7 @@ export class PointService {
         updateMillis,
       );
 
-      const updatedUserPoint = await this.userTable.insertOrUpdate(userId, newPoint);
-      return updatedUserPoint;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw new NotFoundException('User not found');
-      }
-      throw error;
+      return this.userTable.insertOrUpdate(userId, newPoint);
     } finally {
       release();
     }

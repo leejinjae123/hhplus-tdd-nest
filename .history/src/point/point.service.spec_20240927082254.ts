@@ -5,7 +5,7 @@ import { PointService } from './point.service';
 import { PointHistoryTable } from '../database/pointhistory.table';
 import { UserPointTable } from '../database/userpoint.table';
 import { PointHistory, TransactionType } from './point.model';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 describe('PointService', () => {
   let service: PointService;
@@ -27,7 +27,7 @@ describe('PointService', () => {
           provide: PointHistoryTable,
           useValue: {
             insert: jest.fn(),
-            selectAllByUserId: jest.fn().mockResolvedValue([]),
+            selectAllByUserId: jest.fn(),
           },
         },
       ],
@@ -43,8 +43,7 @@ describe('PointService', () => {
   });
 
   describe('getPoint', () => {
-    // 포인트 정보가 존재할 경우
-    it('get user Point', async () => {
+    it('get user Point!', async () => {
       const userId = 1;
       const mockUserPoint = {
         id: userId,
@@ -57,18 +56,17 @@ describe('PointService', () => {
       expect(result).toEqual(mockUserPoint);
       expect(userTable.selectById).toHaveBeenCalledWith(userId);
     });
-    // 유저를 찾을 수 없는경우
+
     it('user not found', async () => {
       const userId = 2;
-      jest.spyOn(userTable, 'selectById').mockResolvedValue(null);
+      jest.spyOn(historyTable, 'selectAllByUserId').mockResolvedValue(null);
 
       await expect(service.getPoint(userId)).rejects.toThrow(NotFoundException);
-      expect(userTable.selectById).toHaveBeenCalledWith(userId);
+      expect(historyTable.selectAllByUserId).toHaveBeenCalledWith(userId);
     });
   });
 
   describe('getHistory', () => {
-    // 포인트 사용내역이 존재할 경우
     it('history exists', async () => {
       const userId = 1;
       const mockHistory: PointHistory[] = [
@@ -83,7 +81,6 @@ describe('PointService', () => {
       console.log('history exists');
     });
 
-    // 포인트 사용내역이 존재하지 않을 경우
     it('history not exists', async () => {
       const userId = 2;
       jest.spyOn(historyTable, 'selectAllByUserId').mockResolvedValue([]);
@@ -94,7 +91,7 @@ describe('PointService', () => {
     });
   });
   describe('chargePoint', () => {
-    it('charge point', async () => {
+    it('should charge user point successfully', async () => {
       const userId = 1;
       const amount = 100;
       const currentPoint = 50;
@@ -118,24 +115,10 @@ describe('PointService', () => {
         expect.any(Number),
       );
     });
-
-    it('max point limit', async () => {
-      const userId = 1;
-      const amount = 10000;
-      const currentPoint = 95000;
-      const mockCurrentUserPoint = { id: userId, point: currentPoint, updateMillis: Date.now() };
-
-      jest.spyOn(userTable, 'selectById').mockResolvedValue(mockCurrentUserPoint);
-
-      await expect(service.chargePoint(userId, amount)).rejects.toThrow(ConflictException);
-
-      expect(userTable.insertOrUpdate).not.toHaveBeenCalled();
-      expect(historyTable.insert).not.toHaveBeenCalled();
-    });
   });
 
   describe('usePoint', () => {
-    it('use point', async () => {
+    it('should use user point successfully', async () => {
       const userId = 1;
       const amount = 50;
       const currentPoint = 100;
@@ -160,7 +143,7 @@ describe('PointService', () => {
       );
     });
 
-    it('use point > current point', async () => {
+    it('should throw error when insufficient points', async () => {
       const userId = 1;
       const amount = 150;
       const currentPoint = 100;
@@ -168,48 +151,10 @@ describe('PointService', () => {
 
       jest.spyOn(userTable, 'selectById').mockResolvedValue(mockCurrentUserPoint);
 
-      await expect(service.usePoint(userId, amount)).rejects.toThrow(ConflictException);
+      await expect(service.usePoint(userId, amount)).rejects.toThrow('Insufficient points');
       expect(userTable.selectById).toHaveBeenCalledWith(userId);
       expect(userTable.insertOrUpdate).not.toHaveBeenCalled();
       expect(historyTable.insert).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Concurrency control', () => {
-    it('userID lock test - charge and use', async () => {
-        const userId = 1;
-        const initialPoint = 100;
-        let currentPoint = initialPoint;
-
-        jest.spyOn(userTable, 'selectById').mockImplementation(async (id) => {
-            return {
-                id,
-                point: currentPoint,
-                updateMillis: Date.now(),
-            };
-        });
-
-        jest.spyOn(userTable, 'insertOrUpdate').mockImplementation(async (id, point) => {
-            currentPoint = point; // Update currentPoint
-            return {
-                id,
-                point,
-                updateMillis: Date.now(),
-            };
-        });
-
-        jest.spyOn(historyTable, 'insert').mockResolvedValue({} as any);
-
-        const chargePromise = service.chargePoint(userId, 50);
-        const usePromise = service.usePoint(userId, 30);
-
-        const [chargeResult, useResult] = await Promise.all([chargePromise, usePromise]);
-
-        expect(userTable.selectById).toHaveBeenCalledTimes(2); // Each charge and use calls selectById once
-        expect(userTable.insertOrUpdate).toHaveBeenCalledTimes(2); // Only two insertOrUpdate calls
-        expect(chargeResult.point).toBe(initialPoint + 50);
-        expect(useResult.point).toBe(initialPoint + 50 - 30);
-        expect(currentPoint).toBe(initialPoint + 50 - 30);
     });
   });
 });
